@@ -7,6 +7,7 @@
 # symbolic link for each of the path in the list at the destination directory
 # pointing to the path of the same name at the source directory.
 #
+#
 # == Motivation
 # I want to have an easy way to work with the many plugins installed with
 # vim-pathogen.
@@ -14,10 +15,23 @@
 # But then I realized that it is useful in many other cases, like for Emacs's
 # plugins!
 #
+#
 # == Configuration
 # The config file is a Ruby DSL file.  See __END__ for an example.
 #
-# Jeffrey Lau
+#
+# == Licence
+#
+# GNU General Public License version 3.
+# Copyright (c) 2011 ``lns.rb`` authors.  All Rights Reserved.
+#
+# Please see the ``COPYING`` file provided with the source distribution for full
+# details.
+#
+#
+# == Authors
+#
+# Jeffrey Lau <github@NOSPAMjlau.tk>
 # 2011-12-28
 
 require 'pp'
