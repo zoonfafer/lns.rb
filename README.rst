@@ -24,10 +24,21 @@ plugins (in ``~/.emacs.d``)!
 
 __ https://github.com/tpope/vim-pathogen
 
+
 Installation
 ------------
 
 Just put ``lns.rb`` in your ``PATH``.
+
+
+Usage
+-----
+
+After editing your ``~/.lnsconfig.rb``, just run::
+
+    $ lns.rb
+
+to refresh the symlinks!
 
 
 Configuration
