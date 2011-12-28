@@ -25,7 +25,7 @@ require 'optparse'
 require 'ostruct'
 
 $N = File::basename $0
-$VERSION = 0.02
+$VERSION = 0.03
 
 $default_config_file = '~/.lnsconfig.rb'
 
@@ -207,7 +207,7 @@ class Lns
         # XXX: warning?
         if $opts.verbose
           warn ""
-          warn " [warning] source directory at:-"
+          warn " [warning] source at:-"
           warn " [w      ]     #{src_path}"
           warn " [w      ] ain't readable"
         end
