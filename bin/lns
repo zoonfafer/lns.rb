@@ -1,0 +1,697 @@
+#!/usr/bin/env ruby
+
+# A script to maintain a set of symbolic links in the specified directory.
+#
+# Given a source directory and a list of relative path names (relative to the
+# source directory) and a destination directory, the program should generate a
+# symbolic link for each of the path in the list at the destination directory
+# pointing to the path of the same name at the source directory.
+#
+#
+# == Motivation
+# I want to have an easy way to work with the many plugins installed with
+# vim-pathogen.
+#
+# But then I realized that it is useful in many other cases, like for Emacs's
+# plugins!
+#
+#
+# == Configuration
+# The config file is a Ruby DSL file.  See __END__ for an example.
+#
+#
+# == Licence
+#
+# GNU General Public License version 3.
+# Copyright (c) 2011 ``lns`` authors.  All Rights Reserved.
+#
+# Please see the ``COPYING`` file provided with the source distribution for full
+# details.
+#
+#
+# == Authors
+#
+# Jeffrey Lau <github@NOSPAMjlau.tk>
+# 2011-12-28
+
+require 'pp'
+require 'optparse'
+require 'ostruct'
+
+$N = File::basename $0
+$VERSION = 0.03
+
+$default_config_file = '~/.lnsconfig.rb'
+
+def vinfo *args
+  if $opts.verbose
+    puts
+    args.each do |line|
+      puts " [info] #{line}"
+    end
+  end
+end
+
+module DirUtil
+  #
+  def self.extended base
+    class << base
+      attr_accessor :dir_stack
+      @dir_stack = []
+    end
+  end
+
+  def ds
+    class << self; @dir_stack; end
+  end
+
+  def pushd path
+    vinfo "pushd `#{path}'"
+    if Dir.chdir path
+      # @dir_stack << path
+      ds << path
+    end
+  end
+
+  def popd
+    # Dir.chdir @dir_stack.pop
+    vinfo "popd `#{ds.last}'"
+    Dir.chdir ds.pop
+  end
+
+  # util
+  def dir path
+    pushd path
+    yield
+    popd
+  end
+end
+
+class Lns
+
+  extend DirUtil
+
+  # complain and exit if dir is not readable
+  def self.check_dir dir, dir_human_name, app_name
+    vinfo "Checking at CWD: `#{Dir.pwd}' for dir: `#{dir}'"
+    if ! File.directory?(dir) || ! File.readable?(dir)
+      warn ""
+      warn "Error:- #{dir_human_name} directory at:-\n    #{dir}"
+      warn "     :  ain't a readable directory"
+      warn "Aborting. (was processing app `#{app_name}'.)"
+      exit 2
+    end
+  end
+
+  # create the LNs if not exists
+  #
+  def self.create_lnln src, dst_ln, dst
+
+    if  File.writable? src
+
+      ln_path="#{src}/#{dst_ln}"
+      vinfo "Creating symlink (CWD: `#{Dir.pwd}') from `#{dst_ln}' to `#{dst}'"
+
+      if ! File.exists? ln_path
+
+        dir src do
+          begin
+            File.symlink dst, dst_ln
+          rescue Errno::EEXIST
+          end
+        end
+
+      else
+
+        if ! File.symlink? ln_path
+          if $opts.verbose
+            warn ""
+            warn " [warning] something at:-"
+            warn " [w      ]     #{ln_path}"
+            warn " [w      ] already exists --- cannot create symlink with same name"
+          end
+          return 2 # TODO
+
+        else
+          # Oh, another symlink exists already!
+          # Let's compare them to see if they reference the same thing.
+
+          resolved_dst_dir = dir dst do Dir.pwd end
+          resolved_ln_path = dir ln_path do Dir.pwd end
+
+          if resolved_dst_dir != resolved_ln_path
+            # unless $opts.quiet
+            warn ""
+            warn "Warning:- a different symlink to\n    #{resolved_ln_path}"
+            warn "       :  exists already --- cannot decide what to do!"
+            # end
+            return 2 # TODO
+          end
+        end
+      end
+    end
+  end
+
+  # bail if config file is not readable
+  #
+  def self.read_config_and_do_it config_file_path
+
+    # read list from a config file
+    _CONFIG_FILE = File.expand_path config_file_path
+
+    if File.readable?(_CONFIG_FILE) && $opts.init && $opts.verbose
+      puts
+      puts " [info] config file at:-"
+      puts " [i   ]     #{_CONFIG_FILE}"
+      puts " [i   ] already exists.  Not going to write a new one."
+    end
+
+    # If config file doesn't exist, and the user hasn't asked to create it,
+    # bail.
+    if ! File.exists? _CONFIG_FILE
+      if $opts.init
+        File.open(_CONFIG_FILE, 'w') do |f|
+          f.write DATA.read
+        end
+      else
+        warn ""
+        warn "Error:- config file `#{_CONFIG_FILE}' doesn't exist"
+        warn "     :  Please create the file."
+        warn "     :  You can use the `--init' flag to create a sample and modify as"
+        warn "     :  necessary."
+        exit 2
+      end
+    elsif ! File.readable? _CONFIG_FILE
+      warn ""
+      warn "Error:- cannot read config file from `#{_CONFIG_FILE}'"
+      warn "     :  Please make it readable : chmod +r \"#{_CONFIG_FILE}\""
+      exit 2
+    end
+
+    self.do_it _CONFIG_FILE
+  end
+
+  # Read from the config file and do stuff.
+  #
+  def self.do_it _CONFIG_FILE
+
+    apps = Lns::DSL::LinksConfig.new.
+      instance_eval(File.read(_CONFIG_FILE), _CONFIG_FILE).to_h
+
+    # vinfo apps.pretty_inspect
+    # vinfo "^apps"
+
+    apps.each_pair do |app, app_config|
+
+      # pp app_config
+      # puts "app config ^"
+      _LIST = app_config[:list]
+
+      __SRC_DIR = app_config[:src]
+      _DST_DIR = File.expand_path app_config[:dst][0]
+      _DST_LN  = app_config[:s2d] && app_config[:s2d][0]  # whatever this variable is called is not important
+      _SRC_LN  = app_config[:d2s] && app_config[:d2s][0]  # whatever this variable is called is not important
+
+      check_dir _DST_DIR, 'destination', app
+
+      # Did they provide a :cd option?
+      # If so, CD to that directory before checking if it's a valid 
+      # directory.
+      # XXX TODO: obviously need a better control flow structure
+      if __SRC_DIR[1].is_a?(Hash) && __SRC_DIR[1][:cd]
+        _SRC_DIR = __SRC_DIR[0]
+        expanded_src_dir = File.expand_path File.join _DST_DIR, __SRC_DIR[0]
+
+        # Yeah, check if the relative base dir is valid!
+        check_dir expanded_src_dir, 'source', app
+        vinfo "Using relative base at `#{expanded_src_dir}' for app `#{app}'."
+
+        # check_dir _SRC_DIR, 'source', app
+
+        # then create the symlink under that dir
+        dir _DST_DIR do
+          self.create_lnln _SRC_DIR, _DST_LN, _DST_DIR
+          self.create_lnln _DST_DIR, _SRC_LN, _SRC_DIR
+        end
+      else
+        _SRC_DIR = File.expand_path __SRC_DIR[0]
+        # pp _SRC_DIR
+        # puts "^yo"
+        # pp app
+        check_dir _SRC_DIR, 'source', app
+        self.create_lnln _SRC_DIR, _DST_LN, _DST_DIR
+        self.create_lnln _DST_DIR, _SRC_LN, _SRC_DIR
+      end
+
+      self.fetch_from_gits _LIST, _SRC_DIR
+      _FLATTENED_LIST = _LIST
+      self.create_symlinks  _FLATTENED_LIST, _DST_DIR, _SRC_DIR, _SRC_LN
+      self.destroy_symlinks _FLATTENED_LIST, _DST_DIR, _SRC_DIR
+    end
+  end
+
+  # Run git clone on all packages from _LIST:
+  # (Also, check all dependencies and fetch them.)
+  #   {
+  #     "package-name" => {
+  #       path: "path-in-fs",
+  #       git: "giturl",
+  #       deps: {
+  #         "dep1" => {
+  #           path: "path-in-fs",
+  #           git: "giturl",
+  #           deps: {
+  #             "dep11" => {
+  #               path: "path-in-fs",
+  #               git: "giturl",
+  #             },
+  #           }
+  #         },
+  #       }
+  #     }
+  #   }
+  def self.fetch_from_gits _LIST, _SRC_DIR
+    # puts "list is"
+    # pp _LIST
+    _LIST.each do |name, h|
+
+      if h[:deps]
+        fetch_from_gits h[:deps], _SRC_DIR
+      end
+
+      next unless h[:git]
+      fetch_from_git h[:path], h[:git], _SRC_DIR
+    end
+  end
+
+  # path is relative from _SRC_DIR
+  def self.fetch_from_git path, git_path, dir
+    path = path.to_s
+    if File.exists?(path)
+      vinfo "[II] #{path} already exists, skipping git-clone."
+      return
+    end
+    require 'fileutils'
+    require 'open3'
+    FileUtils.cd(dir, verbose: true) do |dir|
+      stdout_str, stderr_str, status =
+        # Open3.capture3(['git', 'clone', git_path, '-o', path])
+        Open3.capture3('git', 'clone', git_path, '-o', path)
+      if ! status.success?
+        warn "[WW] #{git_path} cloning failed."
+        warn stderr_str.pretty_inspect
+      end
+    end
+  end
+
+  # Create and destroy symlinks according to the +_LIST+.
+  #
+  def self.create_symlinks _LIST, _DST_DIR, _SRC_DIR, _SRC_LN=nil
+
+    # CREATION
+    #
+    _LIST.each do |i|
+      # pp i
+      path_name = i[1][:path]
+      src_path = "#{_SRC_DIR}/#{path_name}"
+
+      # bail if source doesn't exist
+      if ! File.readable? src_path
+        # XXX: warning?
+        if $opts.verbose
+          warn ""
+          warn " [warning] source at:-"
+          warn " [w      ]     #{src_path}"
+          warn " [w      ] ain't readable"
+        end
+        next
+      end
+
+      if ! File.readable? "#{_DST_DIR}/#{path_name}"
+        dir _DST_DIR do
+          # prefer the extra indirection if available
+          begin
+            dir_bit = _SRC_LN.nil? ? src_path : "#{_SRC_LN}/#{path_name}"
+            File.symlink dir_bit, path_name
+          rescue Errno::EEXIST
+            # Ahem... Everything's under control.  Nothing to see here.  Please
+            # move along!
+          end
+        end
+      # else
+      #   warn ""
+      #   warn "Error: destination exists already!!!1"
+      #   exit 2
+      end
+    end
+  end
+
+  def self.destroy_symlinks _LIST, _DST_DIR, _SRC_DIR
+
+    # DESTRUCTION
+    #
+    # Remove all symlinks if they can be found in _SRC_DIR but are not in the
+    # _LIST.
+    #
+    Dir["#{_DST_DIR}/*"].each do |i|
+      last_bit = File.basename i
+
+      maybe_src_dir = "#{_SRC_DIR}/#{last_bit}"
+      if File.readable?(maybe_src_dir) && ! _LIST.include?(last_bit)
+        File.unlink i
+      end
+    end
+
+  end
+end
+
+
+
+module Lns::DSL
+
+  #
+  # define for a single App
+  #
+  class AppConfig
+
+    MethodMap = {
+      :destination => :dst,
+      :dst         => :dst, # alias
+      :source      => :src,
+      :src         => :src, # alias
+      :src2dst     => :s2d,
+      :s2d         => :s2d, # alias
+      :dst2src     => :d2s,
+      :d2s         => :d2s, # alias
+      # :Undle       => :undle,
+      # :ok          => :get_undles, # alias
+    }
+
+    # (class << self; self; end).class_eval do
+    class_eval do
+      MethodMap.each_pair do |k, v|
+        define_method k.to_sym do |*args|
+          @stuff[v.to_sym] = args
+        end
+      end
+
+      # Massage @stuff for others' consumption.
+      def Undle(package_name, opts = {})
+        @stuff[:packages][package_name] = massage(package_name, opts)
+      end
+
+      def massage(package_name, opts = {})
+        git_path      = opts[:git]
+        github_path   = opts[:github]
+
+        if git_path && github_path
+          raise Exception.new("E: #{package_name} specified with both :git and :github keys!")
+        end
+
+        if github_path
+          git_path = "https://github.com/#{github_path.gsub(/\.git$/, '')}"
+        end
+
+        deps          = opts[:deps]
+        package_stuff = { path: package_name.to_s }
+        package_stuff.merge!(git: git_path) if git_path
+        if deps
+          package_stuff.merge!(
+            deps: deps.each_with_object({}) do |(pn, os), acc|
+              acc[pn] = massage(pn, os)
+            end
+          )
+        end
+        package_stuff
+      end
+
+      # Naïve flattening of package hashes
+      def flatten(packages)
+        packages.each_with_object({}) do |(pn, os), acc|
+          acc[pn.to_s] = os
+          acc.merge!(flatten(os[:deps])) if os[:deps]
+        end
+      end
+
+    end
+
+    # Flatten dependencies!???!
+    def list
+      flatten @stuff[:packages]
+    end
+
+    def initialize
+      @stuff            = {}
+      @stuff[:packages] = {}
+    end
+
+    # "serialization"
+    def to_h; @stuff; end
+
+  end # class AppConfig
+
+
+  #
+  # define for the entire ensemble
+  #
+  class LinksConfig
+
+    # initialize unique Hash map for different apps
+    def initialize; @apps = {}; end
+
+    # disabled stuff
+    # TODO: may want to report on it?
+    def xapp name, &blk; self; end
+
+    # register the app and the symlink definitions
+    def app name, &blk
+      ac = AppConfig.new
+      ac.instance_eval(&blk)
+      @apps[name] = {
+        :list => ac.list
+      }
+
+      @apps[name].merge! ac.to_h
+
+      self
+    end
+
+    # "serialization"
+    def to_h; @apps; end
+
+  end # class LinksConfig
+end # modele Lns::DSL
+
+
+
+#
+# The option parser is OP.
+#
+class OP
+
+  DEFAULTS = {
+    :quiet   => false,
+    :verbose => false,
+    :dryrun  => false,
+  }
+
+  def self.parse args
+    options = OpenStruct.new DEFAULTS
+
+    op = OptionParser.new do |opts|
+      opts.banner = "Usage: #{$N} [options]"
+
+      opts.separator ""
+      opts.separator "Specific options:"
+
+      opts.on("--init",
+        "Create the configuration file"
+      ) do |v|
+        options.init = v
+      end
+
+      opts.on("-v", "--[no-]verbose",
+        "Run verbosely",
+        "  (default:  #{DEFAULTS[:verbose]})"
+
+      ) do |v|
+        options.verbose = v
+      end
+
+      opts.on("-d", "--dry-run",
+        "UNIMPLEMENTED.  Only simulate it.",
+        "  (default:  #{DEFAULTS[:dryrun]})"
+
+      ) do |d|
+        options.dryrun = d
+      end
+
+      opts.separator "\nCommon options:"
+      opts.on_tail("-h", "--help", "Show this message") do
+        puts opts
+        exit
+      end
+
+      opts.on_tail("--version", "Show version") do
+        puts $VERSION
+        exit
+      end
+
+    end
+
+    op.parse! args
+    options
+  end  # parse()
+end # class OP
+
+#
+# int main()
+#
+if $0 == __FILE__
+  $opts = OP.parse ARGV
+  vinfo "Oi, #{$opts}"
+  Lns.read_config_and_do_it $default_config_file
+else
+  puts 'r u frm irb????/'
+end
+
+exit 0
+
+__END__
+#
+# This file is automatically generated with lns.
+# Please edit it to your needs.
+#
+
+#
+# Prepending the word `app' with `x' disables the entire group.
+#
+
+# app 'vim' do
+xapp 'vim' do # The app name doesn't matter, but has to be unique.
+
+  # REQUIRED
+  # Paths are expanded.
+  #
+
+  # source: where the symlinks should point to
+  #
+  source '~/opt/src/vim-bundle'
+  # src '~/opt/src/vim-bundle' # an alias
+
+  # destination: where the symlinks should live
+  #
+  destination '~/.vim/bundle'
+  # dst '~/.vim/bundle' # an alias
+
+  # OPTIONAL
+  # dest to source link: e.g., $DST_DIR/.src -> $SRC_DIR
+  d2s '.src'
+
+  # OPTIONAL
+  # source to dest link: e.g., $SRC_DIR/.dst -> $DST_DIR
+  s2d '.dst'
+
+  Undle "Align",                   github: "vim-scripts/Align"
+  Undle "AnsiEsc.vim",             github: "vim-scripts/AnsiEsc.vim"
+  Undle "CamelCaseMotion",         github: "bkad/CamelCaseMotion"
+  Undle "Command-T",               github: "wincent/Command-T"
+  Undle "Conque-Shell",            github: "vim-scripts/Conque-Shell"
+  Undle "EasyGrep",                github: "vim-scripts/EasyGrep"
+  Undle "Zenburn",                 github: "jnurmine/Zenburn"
+  Undle "ack.vim",                 github: "mileszs/ack.vim"
+  Undle "ale",                     github: "w0rp/ale"
+  Undle "bufkill.vim",             github: "vim-scripts/bufkill.vim"
+  Undle "csv.vim",                 github: "vim-scripts/csv.vim"
+  Undle "ctrlp.vim",               github: "ctrlpvim/ctrlp.vim"
+  Undle "delimitMate",             github: "Raimondi/delimitMate"
+  Undle "deoplete.nvim",           github: "Shougo/deoplete.nvim"
+  Undle "elm-vim",                 github: "ElmCast/elm-vim"
+  Undle "elm.vim",                 github: "lambdatoast/elm.vim"
+  Undle "emmet-vim",               github: "mattn/emmet-vim"
+  Undle "ensime-vim",              github: "ensime/ensime-vim"
+  Undle "fonts",                   github: "powerline/fonts"
+  Undle "fzf",                     github: "junegunn/fzf"
+  Undle "goyo.vim",                github: "junegunn/goyo.vim"
+  Undle "gundo.vim",               github: "sjl/gundo.vim"
+  Undle "jshint.vim",              github: "wookiehangover/jshint.vim"
+  Undle "kien-ctrlp.vim",          github: "kien/ctrlp.vim"
+  Undle "limelight.vim",           github: "junegunn/limelight.vim"
+  Undle "lusty",                   github: "sjbach/lusty"
+  Undle "matchit.zip",             github: "vim-scripts/matchit.zip"
+  Undle "minibufexpl.vim",         github: "fholgado/minibufexpl.vim"
+  Undle "nerdcommenter",           github: "scrooloose/nerdcommenter"
+  Undle "nerdtree",                github: "scrooloose/nerdtree"
+  Undle "powerline",               github: "powerline/powerline"
+  Undle "rainbow_parentheses.vim", github: "junegunn/rainbow_parentheses.vim"
+  Undle "rfc-syntax",              github: "vim-scripts/rfc-syntax"
+  Undle "seoul256.vim",            github: "junegunn/seoul256.vim"
+  # Undle "snipmate-snippets",       github: "scrooloose/snipmate-snippets"
+  # Undle "snipmate.vim",            github: "msanders/snipmate.vim"
+  Undle "sweet-rspec-vim",         github: "duskhacker/sweet-rspec-vim"
+  # Undle "syntastic",               github: "scrooloose/syntastic"
+  Undle "tabular",                 github: "godlygeek/tabular"
+  Undle "tagbar",                  github: "majutsushi/tagbar"
+  Undle "taglist.vim",             github: "vim-scripts/taglist.vim"
+  Undle "tcomment_vim",            github: "tomtom/tcomment_vim"
+  Undle "tern_for_vim",            github: "ternjs/tern_for_vim"
+  Undle "textile.vim",             github: "timcharper/textile.vim"
+  Undle "tlib_vim",                github: "tomtom/tlib_vim"
+  Undle "tplugin_vim",             github: "tomtom/tplugin_vim"
+  Undle "vim-abolish",             github: "tpope/vim-abolish"
+  Undle "vim-addon-manager",       github: "MarcWeber/vim-addon-manager"
+  Undle "vim-addon-mw-utils",      github: "MarcWeber/vim-addon-mw-utils"
+  Undle "vim-airline-themes",      github: "vim-airline/vim-airline-themes"
+  Undle "vim-airline",             github: "vim-airline/vim-airline"
+  Undle "vim-align",               github: "tsaleh/vim-align"
+  Undle "vim-coffee-script",       github: "kchmck/vim-coffee-script"
+  Undle "vim-colors-solarized",    github: "altercation/vim-colors-solarized"
+  # Undle "vim-colortuner",          github: "zefei/vim-colortuner"
+  Undle "vim-easy-align",          github: "junegunn/vim-easy-align"
+  Undle "vim-emoji",               github: "junegunn/vim-emoji"
+  Undle "vim-endwise",             github: "tpope/vim-endwise"
+  Undle "vim-fontzoom",            github: "thinca/vim-fontzoom"
+  Undle "vim-fugitive",            github: "tpope/vim-fugitive"
+  Undle "vim-git",                 github: "tpope/vim-git"
+  Undle "vim-gitgutter",           github: "airblade/vim-gitgutter"
+  Undle "vim-grepper",             github: "mhinz/vim-grepper"
+  Undle "vim-javascript",          github: "pangloss/vim-javascript"
+  Undle "vim-journal",             github: "junegunn/vim-journal"
+  Undle "vim-jst",                 github: "briancollins/vim-jst"
+  Undle "vim-lengthmatters",       github: "whatyouhide/vim-lengthmatters"
+  Undle "vim-oblique",             github: "junegunn/vim-oblique"
+  Undle "vim-online-thesaurus",    github: "junegunn/vim-online-thesaurus"
+  Undle "vim-pathogen",            github: "tpope/vim-pathogen"
+  Undle "vim-peekaboo",            github: "junegunn/vim-peekaboo"
+  Undle "vim-powerline",           github: "Lokaltog/vim-powerline"
+  Undle "vim-pseudocl",            github: "junegunn/vim-pseudocl"
+  Undle "vim-qml",                 github: "peterhoeg/vim-qml"
+  Undle "vim-ragtag",              github: "tpope/vim-ragtag"
+  Undle "vim-rails",               github: "tpope/vim-rails"
+  Undle "vim-repeat",              github: "tpope/vim-repeat"
+  Undle "vim-rfc",                 github: "mhinz/vim-rfc"
+  Undle "vim-ruby",                github: "vim-ruby/vim-ruby"
+  Undle "vim-ruby-debugger",       github: "astashov/vim-ruby-debugger"
+  Undle "vim-scala",               github: "derekwyatt/vim-scala"
+  # Undle "vim-session",             git: "https://github.com/xolox/vim-session", deps: {
+  #   "vim-misc": {git: "https://github.com/xolox/vim-misc"}
+  # }
+  # Undle "vim-simplefold",          github: "pangloss/vim-simplefold"
+  Undle "vim-snipmate",            github: "garbas/vim-snipmate"
+  Undle "vim-snippets",            github: "honza/vim-snippets"
+  Undle "vim-space",               github: "linktohack/vim-space"
+  Undle "vim-sparkup",             github: "tristen/vim-sparkup"
+  Undle "vim-startify",            github: "mhinz/vim-startify"
+  Undle "vim-surround",            github: "tpope/vim-surround"
+  Undle "vim-syntax-rfc5424",      github: "cybertk/vim-syntax-rfc5424"
+  Undle "vim-taglist-plus",        github: "int3/vim-taglist-plus"
+  Undle "vim-textobj-rubyblock",   github: "nelstrom/vim-textobj-rubyblock"
+  Undle "vim-textobj-user",        github: "kana/vim-textobj-user"
+  Undle "vim-trailing-whitespace", github: "bronson/vim-trailing-whitespace"
+  Undle "vim-unimpaired",          github: "tpope/vim-unimpaired"
+  Undle "vim-vspec",               github: "kana/vim-vspec"
+  Undle "vimtlib",                 github: "tomtom/vimtlib"
+
+end
+
+# vim:ft=ruby:sw=2:sts=2:ts=2:et:

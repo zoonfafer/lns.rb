@@ -1,6 +1,6 @@
-=============================================
- ``lns.rb`` ("`lns`" is short for ``ln -s``)
-=============================================
+==========================================
+ ``lns`` ("`lns`" is short for ``ln -s``)
+==========================================
 
 Introduction
 ------------
@@ -28,7 +28,7 @@ __ https://github.com/tpope/vim-pathogen
 Installation
 ------------
 
-Just put ``lns.rb`` in your ``PATH``.
+Just put ``lns`` in your ``PATH``.
 
 
 Usage
@@ -36,7 +36,7 @@ Usage
 
 After editing your ``~/.lnsconfig.rb``, just run::
 
-    $ lns.rb
+    $ lns
 
 to refresh the symlinks!
 
@@ -44,10 +44,10 @@ to refresh the symlinks!
 Configuration
 -------------
 
-Start ``lns.rb`` with the ``--init`` flag to create and modify from a sample
+Start ``lns`` with the ``--init`` flag to create and modify from a sample
 configuration file::
 
-  $ lns.rb --init
+  $ lns --init
   $ $EDITOR ~/.lnsconfig.rb
 
 
@@ -66,11 +66,11 @@ like (in no particular order):-
 Licence
 -------
 
-.. GNU General Public License version 3.  Copyright © 2011 ``lns.rb`` authors.  All Rights Reserved.
+.. GNU General Public License version 3.  Copyright © 2011 ``lns`` authors.  All Rights Reserved.
 
 
 GNU General Public License version 3.
-Copyright (c) 2011 ``lns.rb`` authors.  All Rights Reserved.
+Copyright (c) 2011-2017 ``lns`` authors.  All Rights Reserved.
 
 Please see the ``COPYING`` file provided with the source distribution for full 
 details.
