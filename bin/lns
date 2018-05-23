@@ -293,8 +293,8 @@ class Lns
     end
     require 'fileutils'
     require 'open3'
-    FileUtils.cd(dir, verbose: true) do |dir|
-      stdout_str, stderr_str, status =
+    FileUtils.cd(dir, verbose: true) do |_d|
+      _stdout_str, stderr_str, status =
         # Open3.capture3(['git', 'clone', git_path, '-o', path])
         Open3.capture3('git', 'clone', git_path, '-o', path)
       if ! status.success?
@@ -396,13 +396,43 @@ module Lns::DSL
       end
 
       # Massage @stuff for others' consumption.
-      def Undle(package_name, opts = {})
-        @stuff[:packages][package_name] = massage(package_name, opts)
+      # def Undle(package_name, opts = {})
+      def Undle(*package_name_and_or_opts)
+        package_name = case package_name_and_or_opts.first
+                       when String then package_name_and_or_opts.first
+                       else infer_package_name_from_opts(package_name_and_or_opts.first)
+                       end
+
+        opts = case package_name_and_or_opts.first
+               when String then package_name_and_or_opts.last
+               else package_name_and_or_opts.first
+               end
+
+        @stuff[:packages][package_name] = massage(opts)
       end
 
-      def massage(package_name, opts = {})
+      def infer_package_name_from_opts(opts)
         git_path      = opts[:git]
         github_path   = opts[:github]
+        # gitlab_path   = opts[:gitlab] # TODO: add support for more aliases
+
+        if git_path && github_path
+          raise Exception.new("E: specified with both :git and :github keys!")
+        end
+
+        if github_path
+          git_path = "https://github.com/#{github_path.gsub(/\.git$/, '')}"
+        end
+
+        git_path =~ %r{/([^/]+)$}
+        $1
+      end
+
+      def massage(opts = {})
+        git_path      = opts[:git]
+        github_path   = opts[:github]
+        # gitlab_path   = opts[:gitlab] # TODO: add support for more aliases
+        package_name  = infer_package_name_from_opts(opts)
 
         if git_path && github_path
           raise Exception.new("E: #{package_name} specified with both :git and :github keys!")
@@ -413,12 +443,12 @@ module Lns::DSL
         end
 
         deps          = opts[:deps]
-        package_stuff = { path: package_name.to_s }
+        package_stuff = { path: opts[:path] || package_name.to_s }
         package_stuff.merge!(git: git_path) if git_path
         if deps
           package_stuff.merge!(
             deps: deps.each_with_object({}) do |(pn, os), acc|
-              acc[pn] = massage(pn, os)
+              acc[pn] = massage(os)
             end
           )
         end
@@ -592,105 +622,124 @@ xapp 'vim' do # The app name doesn't matter, but has to be unique.
   # source to dest link: e.g., $SRC_DIR/.dst -> $DST_DIR
   s2d '.dst'
 
-  Undle "Align",                   github: "vim-scripts/Align"
-  Undle "AnsiEsc.vim",             github: "vim-scripts/AnsiEsc.vim"
-  Undle "CamelCaseMotion",         github: "bkad/CamelCaseMotion"
-  Undle "Command-T",               github: "wincent/Command-T"
-  Undle "Conque-Shell",            github: "vim-scripts/Conque-Shell"
-  Undle "EasyGrep",                github: "vim-scripts/EasyGrep"
-  Undle "Zenburn",                 github: "jnurmine/Zenburn"
-  Undle "ack.vim",                 github: "mileszs/ack.vim"
-  Undle "ale",                     github: "w0rp/ale"
-  Undle "bufkill.vim",             github: "vim-scripts/bufkill.vim"
-  Undle "csv.vim",                 github: "vim-scripts/csv.vim"
-  Undle "ctrlp.vim",               github: "ctrlpvim/ctrlp.vim"
-  Undle "delimitMate",             github: "Raimondi/delimitMate"
-  Undle "deoplete.nvim",           github: "Shougo/deoplete.nvim"
-  Undle "elm-vim",                 github: "ElmCast/elm-vim"
-  Undle "elm.vim",                 github: "lambdatoast/elm.vim"
-  Undle "emmet-vim",               github: "mattn/emmet-vim"
-  Undle "ensime-vim",              github: "ensime/ensime-vim"
-  Undle "fonts",                   github: "powerline/fonts"
-  Undle "fzf",                     github: "junegunn/fzf"
-  Undle "goyo.vim",                github: "junegunn/goyo.vim"
-  Undle "gundo.vim",               github: "sjl/gundo.vim"
-  Undle "jshint.vim",              github: "wookiehangover/jshint.vim"
-  Undle "kien-ctrlp.vim",          github: "kien/ctrlp.vim"
-  Undle "limelight.vim",           github: "junegunn/limelight.vim"
-  Undle "lusty",                   github: "sjbach/lusty"
-  Undle "matchit.zip",             github: "vim-scripts/matchit.zip"
-  Undle "minibufexpl.vim",         github: "fholgado/minibufexpl.vim"
-  Undle "nerdcommenter",           github: "scrooloose/nerdcommenter"
-  Undle "nerdtree",                github: "scrooloose/nerdtree"
-  Undle "powerline",               github: "powerline/powerline"
-  Undle "rainbow_parentheses.vim", github: "junegunn/rainbow_parentheses.vim"
-  Undle "rfc-syntax",              github: "vim-scripts/rfc-syntax"
-  Undle "seoul256.vim",            github: "junegunn/seoul256.vim"
-  # Undle "snipmate-snippets",       github: "scrooloose/snipmate-snippets"
-  # Undle "snipmate.vim",            github: "msanders/snipmate.vim"
-  Undle "sweet-rspec-vim",         github: "duskhacker/sweet-rspec-vim"
-  # Undle "syntastic",               github: "scrooloose/syntastic"
-  Undle "tabular",                 github: "godlygeek/tabular"
-  Undle "tagbar",                  github: "majutsushi/tagbar"
-  Undle "taglist.vim",             github: "vim-scripts/taglist.vim"
-  Undle "tcomment_vim",            github: "tomtom/tcomment_vim"
-  Undle "tern_for_vim",            github: "ternjs/tern_for_vim"
-  Undle "textile.vim",             github: "timcharper/textile.vim"
-  Undle "tlib_vim",                github: "tomtom/tlib_vim"
-  Undle "tplugin_vim",             github: "tomtom/tplugin_vim"
-  Undle "vim-abolish",             github: "tpope/vim-abolish"
-  Undle "vim-addon-manager",       github: "MarcWeber/vim-addon-manager"
-  Undle "vim-addon-mw-utils",      github: "MarcWeber/vim-addon-mw-utils"
-  Undle "vim-airline-themes",      github: "vim-airline/vim-airline-themes"
-  Undle "vim-airline",             github: "vim-airline/vim-airline"
-  Undle "vim-align",               github: "tsaleh/vim-align"
-  Undle "vim-coffee-script",       github: "kchmck/vim-coffee-script"
-  Undle "vim-colors-solarized",    github: "altercation/vim-colors-solarized"
-  # Undle "vim-colortuner",          github: "zefei/vim-colortuner"
-  Undle "vim-easy-align",          github: "junegunn/vim-easy-align"
-  Undle "vim-emoji",               github: "junegunn/vim-emoji"
-  Undle "vim-endwise",             github: "tpope/vim-endwise"
-  Undle "vim-fontzoom",            github: "thinca/vim-fontzoom"
-  Undle "vim-fugitive",            github: "tpope/vim-fugitive"
-  Undle "vim-git",                 github: "tpope/vim-git"
-  Undle "vim-gitgutter",           github: "airblade/vim-gitgutter"
-  Undle "vim-grepper",             github: "mhinz/vim-grepper"
-  Undle "vim-javascript",          github: "pangloss/vim-javascript"
-  Undle "vim-journal",             github: "junegunn/vim-journal"
-  Undle "vim-jst",                 github: "briancollins/vim-jst"
-  Undle "vim-lengthmatters",       github: "whatyouhide/vim-lengthmatters"
-  Undle "vim-oblique",             github: "junegunn/vim-oblique"
-  Undle "vim-online-thesaurus",    github: "junegunn/vim-online-thesaurus"
-  Undle "vim-pathogen",            github: "tpope/vim-pathogen"
-  Undle "vim-peekaboo",            github: "junegunn/vim-peekaboo"
-  Undle "vim-powerline",           github: "Lokaltog/vim-powerline"
-  Undle "vim-pseudocl",            github: "junegunn/vim-pseudocl"
-  Undle "vim-qml",                 github: "peterhoeg/vim-qml"
-  Undle "vim-ragtag",              github: "tpope/vim-ragtag"
-  Undle "vim-rails",               github: "tpope/vim-rails"
-  Undle "vim-repeat",              github: "tpope/vim-repeat"
-  Undle "vim-rfc",                 github: "mhinz/vim-rfc"
-  Undle "vim-ruby",                github: "vim-ruby/vim-ruby"
-  Undle "vim-ruby-debugger",       github: "astashov/vim-ruby-debugger"
-  Undle "vim-scala",               github: "derekwyatt/vim-scala"
-  # Undle "vim-session",             git: "https://github.com/xolox/vim-session", deps: {
+  Undle github: "vim-scripts/Align"
+  Undle github: "vim-scripts/AnsiEsc.vim"
+  Undle github: "bkad/CamelCaseMotion"
+  # Undle github: "wincent/Command-T"
+  # Undle github: "vim-scripts/Conque-Shell"
+  # Undle github: "vim-scripts/EasyGrep"
+  # Undle github: "jnurmine/Zenburn"
+  Undle github: "mileszs/ack.vim"
+  Undle github: "w0rp/ale"
+  Undle github: "vim-scripts/bufkill.vim"
+  Undle github: "vim-scripts/csv.vim"
+  Undle github: "ctrlpvim/ctrlp.vim"
+  Undle github: "Raimondi/delimitMate"
+  Undle github: "Shougo/deoplete.nvim"
+  Undle github: "ElmCast/elm-vim"
+  Undle github: "lambdatoast/elm.vim"
+  Undle github: "mattn/emmet-vim"
+  Undle github: "ensime/ensime-vim"
+  Undle github: "powerline/fonts"
+  Undle github: "junegunn/fzf"
+  # Undle github: "junegunn/goyo.vim"
+  Undle github: "sjl/gundo.vim"
+  Undle github: "wookiehangover/jshint.vim"
+  # Undle github: "kien/ctrlp.vim"
+  Undle github: "Shadowfiend/liftweb-vim"
+  # Undle github: "junegunn/limelight.vim"
+  Undle github: "sjbach/lusty"
+  Undle github: "vim-scripts/matchit.zip"
+  # Undle github: "fholgado/minibufexpl.vim"
+  Undle github: "scrooloose/nerdcommenter"
+  Undle github: "scrooloose/nerdtree"
+  Undle github: "powerline/powerline"
+  Undle github: "junegunn/rainbow_parentheses.vim"
+  Undle github: "vim-scripts/rfc-syntax"
+  Undle github: "junegunn/seoul256.vim"
+  # Undle github: "scrooloose/snipmate-snippets"
+  # Undle github: "msanders/snipmate.vim"
+  Undle github: "duskhacker/sweet-rspec-vim"
+  # Undle github: "scrooloose/syntastic"
+  Undle github: "godlygeek/tabular"
+  Undle github: "majutsushi/tagbar"
+  Undle github: "vim-scripts/taglist.vim"
+  Undle github: "tomtom/tcomment_vim"
+  Undle github: "ternjs/tern_for_vim"
+  Undle github: "timcharper/textile.vim"
+  Undle github: "tomtom/tlib_vim"
+  Undle github: "tomtom/tplugin_vim"
+  Undle github: "tpope/vim-abolish"
+  Undle github: "MarcWeber/vim-addon-manager"
+  Undle github: "MarcWeber/vim-addon-mw-utils"
+  Undle github: "vim-airline/vim-airline-themes"
+  Undle github: "vim-airline/vim-airline"
+  Undle github: "tsaleh/vim-align"
+  Undle github: "Chiel92/vim-autoformat"
+  # Undle github: "kchmck/vim-coffee-script"
+  Undle github: "altercation/vim-colors-solarized"
+  # Undle github: "zefei/vim-colortuner"
+  Undle github: "junegunn/vim-easy-align"
+  Undle github: "junegunn/vim-emoji"
+  Undle github: "tpope/vim-endwise"
+  Undle github: "thinca/vim-fontzoom"
+  Undle github: "tpope/vim-fugitive"
+  Undle github: "tpope/vim-git"
+  Undle github: "airblade/vim-gitgutter"
+  Undle github: "mhinz/vim-grepper"
+  Undle github: "pangloss/vim-javascript"
+  Undle github: "junegunn/vim-journal"
+  Undle github: "briancollins/vim-jst"
+  Undle github: "whatyouhide/vim-lengthmatters"
+  Undle github: "zoonfafer/vim-mythryl"
+  Undle github: "junegunn/vim-oblique"
+  # Undle github: "junegunn/vim-online-thesaurus"
+  Undle github: "tpope/vim-pathogen"
+  Undle github: "junegunn/vim-peekaboo"
+  # Undle github: "Lokaltog/vim-powerline"
+  Undle github: "junegunn/vim-pseudocl"
+  Undle github: "peterhoeg/vim-qml"
+  Undle github: "tpope/vim-ragtag"
+  Undle github: "tpope/vim-rails"
+  Undle github: "tpope/vim-repeat"
+  Undle github: "mhinz/vim-rfc"
+  Undle github: "vim-ruby/vim-ruby"
+  # Undle github: "astashov/vim-ruby-debugger"
+  Undle github: "derekwyatt/vim-scala"
+  # Undle deps: {
   #   "vim-misc": {git: "https://github.com/xolox/vim-misc"}
   # }
-  # Undle "vim-simplefold",          github: "pangloss/vim-simplefold"
-  Undle "vim-snipmate",            github: "garbas/vim-snipmate"
-  Undle "vim-snippets",            github: "honza/vim-snippets"
-  Undle "vim-space",               github: "linktohack/vim-space"
-  Undle "vim-sparkup",             github: "tristen/vim-sparkup"
-  Undle "vim-startify",            github: "mhinz/vim-startify"
-  Undle "vim-surround",            github: "tpope/vim-surround"
-  Undle "vim-syntax-rfc5424",      github: "cybertk/vim-syntax-rfc5424"
-  Undle "vim-taglist-plus",        github: "int3/vim-taglist-plus"
-  Undle "vim-textobj-rubyblock",   github: "nelstrom/vim-textobj-rubyblock"
-  Undle "vim-textobj-user",        github: "kana/vim-textobj-user"
-  Undle "vim-trailing-whitespace", github: "bronson/vim-trailing-whitespace"
-  Undle "vim-unimpaired",          github: "tpope/vim-unimpaired"
-  Undle "vim-vspec",               github: "kana/vim-vspec"
-  Undle "vimtlib",                 github: "tomtom/vimtlib"
+  # Undle github: "pangloss/vim-simplefold"
+  Undle github: "garbas/vim-snipmate"
+  Undle github: "honza/vim-snippets"
+  Undle github: "linktohack/vim-space"
+  Undle github: "tristen/vim-sparkup"
+  Undle github: "mhinz/vim-startify"
+  Undle github: "tpope/vim-surround"
+  Undle github: "cybertk/vim-syntax-rfc5424"
+  # Undle github: "int3/vim-taglist-plus"
+  Undle github: "nelstrom/vim-textobj-rubyblock"
+  Undle github: "kana/vim-textobj-user"
+  Undle github: "zoonfafer/vim-tk.jlau.dotfiles"
+  Undle github: "bronson/vim-trailing-whitespace"
+  Undle github: "tpope/vim-unimpaired"
+  # Undle github: "kana/vim-vspec"
+  Undle github: "tomtom/vimtlib"
+  Undle github: "mileszs/ack.vim"
+  # Undle github: "thinca/vim-fontzoom"
+  Undle github: "hashivim/vim-terraform"
+  Undle github: "tpope/vim-obsession"
+  Undle github: "dhruvasagar/vim-prosession"
+  Undle github: "gikmx/vim-ctrlposession"
+  Undle github: "dhruvasagar/vim-dotoo"
+  Undle github: "ryanoasis/vim-devicons"
+  Undle github: "tomlion/vim-solidity"
+  Undle github: "editorconfig/editorconfig-vim"
+  Undle github: "FrigoEU/psc-ide-vim"
+  # Undle github: "purescript-contrib/purescript-vim"
+  Undle github: "sheerun/vim-polyglot"
+  Undle github: "Xuyuanp/nerdtree-git-plugin"
+  Undle github: "myusuf3/numbers.vim"
 
 end
 
